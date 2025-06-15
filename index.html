@@ -1,0 +1,245 @@
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Pac-Man</title>
+  <style>
+    body {
+      background: black;
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
+    }
+    canvas {
+      border: 3px solid yellow;
+      background: black;
+      display: block;
+      margin: 10px auto;
+    }
+    #joystick button {
+      margin: 6px;
+      padding: 14px 18px;
+      font-size: 24px;
+      border-radius: 10px;
+      background-color: #333;
+      color: white;
+      border: 2px solid white;
+    }
+  </style>
+</head>
+<body>
+  <h2>Score: <span id="score">0</span> | High Score: <span id="highScore">0</span></h2>
+  <canvas id="gameCanvas" width="480" height="480"></canvas>
+  <div id="lives">❤️❤️❤️</div>
+  <div id="joystick">
+    <button onclick="move('up')">^</button><br>
+    <button onclick="move('left')"><</button>
+    <button onclick="move('right')">></button><br>
+    <button onclick="move('down')">v</button><br><br>
+    <button onclick="resetGame()">🔁 Reset</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const scoreEl = document.getElementById("score");
+    const highScoreEl = document.getElementById("highScore");
+    const livesEl = document.getElementById("lives");
+
+    const TILE = 24;
+    const WIDTH = 20, HEIGHT = 20;
+
+    const maze = Array.from({ length: HEIGHT }, () => Array(WIDTH).fill(0));
+    const food = [];
+
+    let score = 0;
+    let highScore = localStorage.getItem("pacHighScore") || 0;
+    let lives = 3;
+    let powerMode = false, powerTimer = 0;
+    let tick = 0;
+
+    // Tembok sederhana
+    for (let y = 0; y < HEIGHT; y++) {
+      for (let x = 0; x < WIDTH; x++) {
+        if (y === 0 || y === HEIGHT - 1 || x === 0 || x === WIDTH - 1 || 
+            (x % 4 === 0 && y % 4 === 0)) {
+          maze[y][x] = 1;
+        } else {
+          food.push({ x, y, big: Math.random() < 0.05 });
+        }
+      }
+    }
+
+    const pacman = { x: 1, y: 1, dir: 'right', open: true, moveDelay: 0 };
+    const pacImgs = {
+      open: new Image(),
+      close: new Image()
+    };
+    pacImgs.open.src = "pacman1.png";
+    pacImgs.close.src = "pacman2.png";
+
+    const ghosts = [
+      { x: 18, y: 1, img: new Image(), scared: false },
+      { x: 18, y: 18, img: new Image(), scared: false },
+      { x: 1, y: 18, img: new Image(), scared: false }
+    ];
+    ghosts[0].img.src = "Hantu1.png";
+    ghosts[1].img.src = "Hantu2.png";
+    ghosts[2].img.src = "Hantu3.png";
+
+    function move(dir) {
+      pacman.dir = dir;
+    }
+
+    function drawMaze() {
+      for (let y = 0; y < HEIGHT; y++) {
+        for (let x = 0; x < WIDTH; x++) {
+          if (maze[y][x] === 1) {
+            ctx.fillStyle = "blue";
+            ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
+          }
+        }
+      }
+    }
+
+    function drawFood() {
+      for (let f of food) {
+        ctx.beginPath();
+        ctx.fillStyle = f.big ? "orange" : "white";
+        ctx.arc(f.x*TILE + TILE/2, f.y*TILE + TILE/2, f.big ? 5 : 2.5, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+
+    function drawPacman() {
+      const img = pacman.open ? pacImgs.open : pacImgs.close;
+      ctx.drawImage(img, pacman.x*TILE, pacman.y*TILE, TILE, TILE);
+    }
+
+    function drawGhosts() {
+      for (let g of ghosts) {
+        ctx.globalAlpha = g.scared ? 0.5 : 1;
+        ctx.drawImage(g.img, g.x*TILE, g.y*TILE, TILE, TILE);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function drawLives() {
+      livesEl.textContent = "❤️".repeat(lives);
+    }
+
+    function updateFood() {
+      for (let i = food.length - 1; i >= 0; i--) {
+        const f = food[i];
+        if (f.x === pacman.x && f.y === pacman.y) {
+          score += f.big ? 10 : 1;
+          if (f.big) {
+            powerMode = true;
+            powerTimer = 300;
+            ghosts.forEach(g => g.scared = true);
+          }
+          food.splice(i, 1);
+        }
+      }
+    }
+
+    function movePacman() {
+      if (pacman.moveDelay > 0) {
+        pacman.moveDelay--;
+        return;
+      }
+      const dirs = { up:[0,-1], down:[0,1], left:[-1,0], right:[1,0] };
+      const [dx, dy] = dirs[pacman.dir];
+      const nx = pacman.x + dx;
+      const ny = pacman.y + dy;
+      if (maze[ny] && maze[ny][nx] === 0) {
+        pacman.x = nx;
+        pacman.y = ny;
+      }
+      pacman.moveDelay = 10; // gerak tiap 10 tick
+    }
+
+    function moveGhosts() {
+      if (tick % 20 !== 0) return;
+      for (let g of ghosts) {
+        const dx = pacman.x - g.x;
+        const dy = pacman.y - g.y;
+        let mx = 0, my = 0;
+        if (Math.abs(dx) > Math.abs(dy)) mx = dx > 0 ? 1 : -1;
+        else my = dy > 0 ? 1 : -1;
+
+        const nx = g.x + mx;
+        const ny = g.y + my;
+        if (maze[ny] && maze[ny][nx] === 0) {
+          g.x = nx;
+          g.y = ny;
+        }
+      }
+    }
+
+    function checkCollision() {
+      for (let g of ghosts) {
+        if (g.x === pacman.x && g.y === pacman.y) {
+          if (g.scared) {
+            g.x = 10; g.y = 10;
+            score += 20;
+          } else {
+            lives--;
+            if (lives <= 0) {
+              alert("Game Over");
+              if (score > highScore) {
+                localStorage.setItem("pacHighScore", score);
+              }
+              resetGame();
+            } else {
+              pacman.x = 1; pacman.y = 1;
+            }
+          }
+        }
+      }
+    }
+
+    function resetGame() {
+      location.reload();
+    }
+
+    function loop() {
+      tick++;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawMaze();
+      drawFood();
+      drawPacman();
+      drawGhosts();
+      drawLives();
+
+      if (tick % 30 === 0) pacman.open = !pacman.open;
+      movePacman();
+      moveGhosts();
+      updateFood();
+      checkCollision();
+
+      if (powerMode) {
+        powerTimer--;
+        if (powerTimer <= 0) {
+          powerMode = false;
+          ghosts.forEach(g => g.scared = false);
+        }
+      }
+
+      scoreEl.textContent = score;
+      highScoreEl.textContent = Math.max(highScore, score);
+      requestAnimationFrame(loop);
+    }
+
+    drawLives();
+    loop();
+  </script>
+</body>
+</html>
